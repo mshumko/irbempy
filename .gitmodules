@@ -1,0 +1,3 @@
+[submodule "IRBEM"]
+	path = IRBEM
+	url = git@github.com:PRBEM/IRBEM.git
