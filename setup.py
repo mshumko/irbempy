@@ -625,57 +625,8 @@ class build(_build):
         os.chdir(olddir)
         return
 
-    def compile_libspacepy(self):
-        """Compile the C library, libspacepy. JTN 20110224"""
-        srcdir = os.path.join('spacepy', 'libspacepy')
-        outdir = os.path.join(self.build_lib, 'spacepy')
-        try:
-            if sys.platform == 'win32':
-                #numpy whacks our C compiler options. We need it for Fortran,
-                #but since we're using C to build a standard shared object,
-                #not a numpy extension module, need vanilla C back.
-                numpy_compiler_class = distutils.ccompiler.compiler_class
-                distutils.ccompiler.compiler_class = real_compiler_class
-                comp = real_distutils_ccompiler_new_compiler(
-                    compiler=self.compiler)
-                distutils.ccompiler.compiler_class = numpy_compiler_class
-                #Cut out MSVC runtime https://bugs.python.org/issue16472
-                #For some reason they're named differently on py2 and py3
-                comp.dll_libraries = [
-                    l for l in comp.dll_libraries if not l.startswith((
-                        'msvcr', 'vcruntime'))]
-            else:
-                comp = distutils.ccompiler.new_compiler(compiler=self.compiler)
-            if hasattr(distutils.ccompiler, 'customize_compiler'):
-                distutils.ccompiler.customize_compiler(comp)
-            else:
-                distutils.sysconfig.customize_compiler(comp)
-            sources = list(glob.glob(os.path.join(srcdir, '*.c')))
-            objects = [os.path.join(self.build_temp, s[:-2] + '.o')
-                       for s in sources]
-            headers = list(glob.glob(os.path.join(srcdir, '*.h')))
-            #Assume every .o file associated with similarly-named .c file,
-            #and EVERY header file
-            outdated = [s for s, o in zip(sources, objects)
-                        if distutils.dep_util.newer(s, o) or
-                        distutils.dep_util.newer_group(headers, o)]
-            if outdated:
-                comp.compile(outdated, output_dir=self.build_temp)
-            libpath = os.path.join(
-                outdir, comp.library_filename('spacepy', lib_type='shared'))
-            if distutils.dep_util.newer_group(objects, libpath):
-                comp.link_shared_lib(objects, 'spacepy', libraries=['m'],
-                                     output_dir=outdir)
-        except:
-            warnings.warn(
-                'libspacepy compile failed; some operations may be slow.')
-            print('libspacepy compile failed:')
-            (t, v, tb) = sys.exc_info()
-            print(v)
-
     def run(self):
         """Actually perform the build"""
-        self.compile_libspacepy()
         if sys.platform == 'win32':
             #Copy mingw32 DLLs. This keeps them around if ming is uninstalled,
             #but more important puts them where bdist_wininst and bdist_wheel
@@ -683,7 +634,6 @@ class build(_build):
             copy_dlls(os.path.join(self.build_lib, 'spacepy', 'mingw'))
         _build.run(self) #need subcommands BEFORE building irbem
         self.compile_irbempy()
-        delete_old_files(self.build_lib)
 
 
 class install(_install):
@@ -712,18 +662,12 @@ class install(_install):
             distutils.ccompiler.customize_compiler(comp)
         else:
             distutils.sysconfig.customize_compiler(comp)
-        libspacepy = os.path.join(
-            'spacepy', comp.library_filename('spacepy', lib_type='shared'))
-        if os.path.exists(os.path.join(self.build_lib, libspacepy)):
-            spacepylibs = [os.path.join(self.install_libbase, libspacepy)]
-        else:
-            spacepylibs = []
         irbemlibfiles = [os.path.join('spacepy', 'irbempy', f)
                          for f in get_irbem_libfiles()]
         irbemlibs = [
             os.path.join(self.install_libbase, f) for f in irbemlibfiles
             if os.path.exists(os.path.join(self.build_lib, f))]
-        return outputs + spacepylibs + irbemlibs
+        return outputs + irbemlibs
 
 
 def copy_dlls(outdir):
